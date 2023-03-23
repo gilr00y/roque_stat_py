@@ -1,10 +1,12 @@
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyInt};
 use numpy::{array, PyArray, PyArray1, PyArray2};
 use std::collections::HashMap;
 use numpy::ndarray::{Array1, Array2};
 use roque_stat::roque_stat::batch_crp::BatchCRP;
 use roque_stat::roque_stat::crp::CRP;
+use roque_stat::roque_stat::projection::Projection;
+
 use roque_stat::roque_stat::table::Table;
 
 /// Formats the sum of two numbers as string.
@@ -21,33 +23,40 @@ use roque_stat::roque_stat::table::Table;
 // }
 
 #[pyclass]
-pub struct PyBatchCRP {
-  batch_crp: BatchCRP<'static>,
+pub struct Roque {
+  batch_crp: BatchCRP
 }
 
 // Implement necessary methods for PyBatchCRP
 
 #[pymodule]
 fn proque_stat(_py: Python, m: &PyModule) -> PyResult<()> {
-  m.add_class::<PyBatchCRP>()?;
+  m.add_class::<Roque>()?;
 
   Ok(())
 }
 
 #[pymethods]
-impl PyBatchCRP {
+impl Roque {
   // Example: new() method for Python
   #[new]
   pub unsafe fn new(alpha: f64, max_iterations: u32, psi_scale: &PyArray1<f64>) -> Self {
     let psi_scale: Array1<f64> = psi_scale.as_array().to_owned();
-    let tables = Box::leak(Box::new(HashMap::<Vec<u8>, Box<Table>>::new()));
+    let tables = Box::new(HashMap::<Vec<u8>, Box<Table>>::new());
     let batch_crp = BatchCRP {
       alpha,
       max_iterations,
       tables,
       psi_scale,
     };
-    PyBatchCRP { batch_crp }
+    Roque { batch_crp }
+  }
+
+  pub unsafe fn project(&self, projection: &PyArray1<i64>) -> Self {
+    let proj_conv: Vec<usize> = projection.as_array().to_vec().iter().map(|x| usize::try_from(x.clone()).unwrap()).collect();
+    Roque {
+      batch_crp: Projection::new(&self.batch_crp, proj_conv).crp
+    }
   }
 
   // Example: seat() method for Python
@@ -71,4 +80,3 @@ impl PyBatchCRP {
     self.batch_crp.pp(datum.to_owned_array())
   }
 }
-
