@@ -4,8 +4,10 @@ use numpy::{array, PyArray, PyArray1, PyArray2};
 use std::collections::HashMap;
 use numpy::ndarray::{Array1, Array2};
 use roque_stat::roque_stat::batch_crp::BatchCRP;
+use roque_stat::roque_stat::conditional::{Conditional, ConditionalQuery};
 use roque_stat::roque_stat::crp::CRP;
 use roque_stat::roque_stat::projection::Projection;
+use roque_stat::roque_stat::kl::KLDivergence;
 
 use roque_stat::roque_stat::table::Table;
 
@@ -21,10 +23,9 @@ use roque_stat::roque_stat::table::Table;
 //     m.add_function(wrap_pyfunction!(sum_as_string, m)?)?;
 //     Ok(())
 // }
-
 #[pyclass]
 pub struct Roque {
-  batch_crp: BatchCRP
+  batch_crp: BatchCRP,
 }
 
 // Implement necessary methods for PyBatchCRP
@@ -59,6 +60,19 @@ impl Roque {
     }
   }
 
+  pub unsafe fn query(&self, query: &PyDict) -> Self {
+    let query_conv: ConditionalQuery = query.extract().unwrap();
+    let conditional = Conditional::new(&self.batch_crp, query_conv);
+    Roque {
+      batch_crp: conditional.crp
+    }
+  }
+
+  pub unsafe fn compare(&self, other: &Roque) -> (f64, f64, f64) {
+    let kl = KLDivergence::new(&self.batch_crp, &other.batch_crp);
+    (kl.upper, kl.lower, kl.mean)
+  }
+
   // Example: seat() method for Python
   pub unsafe fn seat(&mut self, datum: &PyArray1<f64>) {
     let datum: Array1<f64> = datum.as_array().to_owned();
@@ -78,5 +92,16 @@ impl Roque {
 
   pub unsafe fn pp(&self, datum: &PyArray1<f64>) -> f64 {
     self.batch_crp.pp(datum.to_owned_array())
+  }
+
+  pub fn describe(&self) -> PyResult<PyObject> {
+    let mut map: HashMap<&str, &str> = HashMap::new();
+    let table_count = self.batch_crp.tables.len().to_string();
+    let binding = table_count.as_str();
+    map.insert("num_tables", binding);
+
+    pyo3::Python::with_gil(|py| {
+      Ok(map.to_object(py))
+    })
   }
 }
